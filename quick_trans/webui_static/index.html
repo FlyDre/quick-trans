@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>quick-trans 实时字幕</title>
+    <style>
+      body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial; margin: 16px; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      .col { display: flex; flex-direction: column; gap: 8px; }
+      video { width: min(960px, 100%); background: #000; border-radius: 8px; }
+      .subtitle { margin-top: 10px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; }
+      .asr { color: #444; }
+      .zh { color: #111; font-weight: 600; margin-top: 6px; }
+      .status { color: #666; }
+      input[type="text"] { width: 520px; max-width: 90vw; }
+      code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <h2>quick-trans 实时字幕</h2>
+    <div class="col">
+      <div class="row">
+        <input id="file" type="file" />
+        <label><input id="cpu" type="checkbox" /> 强制CPU</label>
+      </div>
+      <div class="row">
+        <label>ASR模型：<input id="asrModel" type="text" value="" placeholder="留空=默认本地medium/否则输入路径或模型名" /></label>
+      </div>
+      <div class="row">
+        <label>翻译模型：<input id="mtModel" type="text" value="" placeholder="留空=默认本地nllb/否则输入路径或模型名" /></label>
+      </div>
+      <div class="row">
+        <label>ASR compute_type：<input id="asrCt" type="text" value="int8_float16" /></label>
+        <button id="start">开始</button>
+        <span id="status" class="status"></span>
+      </div>
+    </div>
+
+    <div style="margin-top: 14px;">
+      <video id="player" controls playsinline></video>
+      <div class="subtitle">
+        <div id="asr" class="asr"></div>
+        <div id="zh" class="zh"></div>
+      </div>
+    </div>
+
+    <script>
+      const fileEl = document.getElementById('file');
+      const cpuEl = document.getElementById('cpu');
+      const asrModelEl = document.getElementById('asrModel');
+      const mtModelEl = document.getElementById('mtModel');
+      const asrCtEl = document.getElementById('asrCt');
+      const startEl = document.getElementById('start');
+      const statusEl = document.getElementById('status');
+      const player = document.getElementById('player');
+      const asrOut = document.getElementById('asr');
+      const zhOut = document.getElementById('zh');
+
+      let cues = [];
+      let es = null;
+      let lastShown = -1;
+
+      function setStatus(s) { statusEl.textContent = s; }
+
+      function findCueIndex(t) {
+        for (let i = cues.length - 1; i >= 0; i--) {
+          const c = cues[i];
+          if (t >= c.start && t <= c.end) return i;
+          if (t > c.end) return -1;
+        }
+        return -1;
+      }
+
+      function onTime() {
+        const t = player.currentTime || 0;
+        const idx = findCueIndex(t);
+        if (idx !== lastShown) {
+          lastShown = idx;
+          if (idx >= 0) {
+            asrOut.textContent = 'ASR: ' + cues[idx].asr;
+            zhOut.textContent = 'ZH: ' + cues[idx].zh;
+          } else {
+            asrOut.textContent = '';
+            zhOut.textContent = '';
+          }
+        }
+      }
+
+      player.addEventListener('timeupdate', onTime);
+      player.addEventListener('seeked', onTime);
+      player.addEventListener('play', onTime);
+
+      startEl.addEventListener('click', async () => {
+        const f = fileEl.files && fileEl.files[0];
+        if (!f) { setStatus('请选择音频/视频文件'); return; }
+
+        cues = [];
+        lastShown = -1;
+        asrOut.textContent = '';
+        zhOut.textContent = '';
+
+        const url = URL.createObjectURL(f);
+        player.src = url;
+
+        if (es) { try { es.close(); } catch(e) {} es = null; }
+
+        const form = new FormData();
+        form.append('file', f, f.name);
+        form.append('cpu', cpuEl.checked ? '1' : '0');
+        if (asrModelEl.value.trim()) form.append('asr_model', asrModelEl.value.trim());
+        if (mtModelEl.value.trim()) form.append('mt_model', mtModelEl.value.trim());
+        if (asrCtEl.value.trim()) form.append('asr_compute_type', asrCtEl.value.trim());
+
+        setStatus('上传并启动识别中…');
+        const resp = await fetch('/start', { method: 'POST', body: form });
+        if (!resp.ok) { setStatus('启动失败: ' + resp.status); return; }
+        const data = await resp.json();
+        const job = data.job;
+        setStatus('运行中…');
+
+        es = new EventSource('/events?job=' + encodeURIComponent(job));
+        es.onmessage = (ev) => {
+          let msg = null;
+          try { msg = JSON.parse(ev.data); } catch(e) { return; }
+          if (msg.type === 'cue') {
+            cues.push(msg);
+          } else if (msg.type === 'status') {
+            setStatus(msg.status);
+          } else if (msg.type === 'done') {
+            setStatus('完成');
+          } else if (msg.type === 'error') {
+            setStatus('错误: ' + msg.message);
+          }
+        };
+        es.onerror = () => {
+          if (es) { try { es.close(); } catch(e) {} }
+        };
+      });
+    </script>
+  </body>
+</html>
