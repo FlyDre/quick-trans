@@ -1,0 +1,7 @@
+faster-whisper>=1.1.0
+numpy>=1.26.0
+miniaudio>=1.60
+pycryptodome>=3.20.0
+torch>=2.1.0
+transformers>=4.38.0
+sentencepiece>=0.1.99
