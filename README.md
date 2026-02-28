@@ -69,3 +69,4 @@ pip install -U modelscope
 
 ### 输出
 - out.vtt：WebVTT 格式，可直接被播放器/浏览器/OBS 浏览器源使用
+ 
