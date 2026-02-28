@@ -1,3 +1,6 @@
+# quick-trans
+A project for generate Chinese subtitles for Japanese videos in real-time. 实时为日语视频生成中文字幕。
+
 ## quick-trans（主干流程：日语音频→中文字幕）
 
 ### 目标
