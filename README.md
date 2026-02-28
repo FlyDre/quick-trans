@@ -59,13 +59,29 @@ pip install -U modelscope
 - 其他格式（如 m4a/aac）：需要额外解码后再输入
 
 常用参数：
-- --asr-model：可用 .\llm\gpustack\faster-whisper-small 或 .\llm\gpustack\faster-whisper-medium；默认优先 small
+- --asr-model：可用 .\llm\gpustack\faster-whisper-small 或 .\llm\gpustack\faster-whisper-medium；默认优先 medium
 - --asr-device：cuda / cpu
 - --cpu：强制 ASR 与翻译都在 CPU 上跑
 - --asr-text：把 ASR 原文落盘为 txt（不给值则自动生成为 output 同名的 .asr.txt）
-- --mt-model：默认优先使用 .\llm\facebook\nllb-200-distilled-600M，若不存在则用 facebook/nllb-200-distilled-600M
-- --mt-device：cuda / cpu
+- --mt-backend：nllb / sakura-ollama
+- --mt-model：mt-backend=nllb 时为模型目录/模型名；mt-backend=sakura-ollama 时为 Ollama 模型名（默认 sakura-1.5b）
+- --mt-device：仅对 mt-backend=nllb 生效（cuda / cpu）
+- --ollama-host：Ollama 地址（默认 http://127.0.0.1:11434）
 - --realtime：按音频时长节奏实时推进（默认会尽快处理）
+
+### Sakura 翻译（GGUF + Ollama）
+1）准备 Ollama 并启动服务：
+```bash
+ollama serve
+```
+2）把已下载的 Sakura GGUF 导入到 Ollama（选择一个 gguf 量化文件路径）：
+```bash
+python .\scripts\ollama_create_sakura.py --name sakura-1.5b --gguf ".\llm\SakuraLLM\Sakura-1.5B-Qwen2.5-v1.0-GGUF\sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+```
+3）运行 quick-trans 使用 Sakura 翻译：
+```bash
+python -m quick_trans.cli --input "2.mp3" --output out.vtt --mt-backend sakura-ollama --mt-model sakura-1.5b
+```
 
 ### 输出
 - out.vtt：WebVTT 格式，可直接被播放器/浏览器/OBS 浏览器源使用

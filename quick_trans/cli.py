@@ -29,6 +29,8 @@ class Args:
     mt_model: str
     mt_device: str
     mt_beam_size: int
+    mt_backend: str
+    ollama_host: str | None
     language: str
     hf_token: str | None
     hf_endpoint: str | None
@@ -68,6 +70,8 @@ def _parse_args() -> Args:
     p.add_argument("--mt-model", default=None)
     p.add_argument("--mt-device", default="cuda")
     p.add_argument("--mt-beam-size", type=int, default=1)
+    p.add_argument("--mt-backend", choices=["nllb", "sakura-ollama"], default="nllb")
+    p.add_argument("--ollama-host", default=None)
 
     p.add_argument("--language", default="ja")
     p.add_argument("--hf-token", default=None)
@@ -79,11 +83,17 @@ def _parse_args() -> Args:
         str(a.asr_model).strip().strip("`'\"").rstrip(".") if a.asr_model else _pick_local_model(r"llm\gpustack\faster-whisper-medium", "medium")
     )
     mt_model = (
-        str(a.mt_model).strip().strip("`'\"").rstrip(".") if a.mt_model else _pick_local_model(r"llm\facebook\nllb-200-distilled-600M", "facebook/nllb-200-distilled-600M")
+        str(a.mt_model).strip().strip("`'\"").rstrip(".")
+        if a.mt_model
+        else (
+            _pick_local_model(r"llm\facebook\nllb-200-distilled-600M", "facebook/nllb-200-distilled-600M")
+            if a.mt_backend == "nllb"
+            else "sakura-1.5b"
+        )
     )
     if os.path.isdir(asr_model):
         asr_model = os.path.abspath(asr_model)
-    if os.path.isdir(mt_model):
+    if a.mt_backend == "nllb" and os.path.isdir(mt_model):
         mt_model = os.path.abspath(mt_model)
     asr_text: str | None
     if a.asr_text is None:
@@ -114,6 +124,8 @@ def _parse_args() -> Args:
         mt_model=mt_model,
         mt_device=mt_device,
         mt_beam_size=a.mt_beam_size,
+        mt_backend=a.mt_backend,
+        ollama_host=(str(a.ollama_host).strip().strip("`'\"").rstrip("/") if a.ollama_host else None),
         language=a.language,
         hf_token=(str(a.hf_token).strip() if a.hf_token else None),
         hf_endpoint=(str(a.hf_endpoint).strip().strip("`'\"").rstrip("/") if a.hf_endpoint else None),
@@ -145,6 +157,8 @@ def main() -> None:
         mt_model=a.mt_model,
         mt_device=a.mt_device,
         mt_beam_size=a.mt_beam_size,
+        mt_backend=a.mt_backend,
+        ollama_host=a.ollama_host,
         language=a.language,
         hf_token=a.hf_token,
         hf_endpoint=a.hf_endpoint,

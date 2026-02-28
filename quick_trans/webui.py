@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from quick_trans.asr import Asr
 from quick_trans.audio import AudioStream
 from quick_trans.mt import Translator
+from quick_trans.mt_sakura import SakuraOllamaTranslator
 from quick_trans.vad import VadSegmenter
 
 
@@ -70,11 +71,19 @@ class _Job:
                 beam_size=int(self.cfg.get("asr_beam_size", 1)),
                 language=str(self.cfg.get("language", "ja")),
             )
-            mt = Translator(
-                model_name=str(self.cfg.get("mt_model", "facebook/nllb-200-distilled-600M")),
-                device=str(self.cfg.get("mt_device", "cuda")),
-                beam_size=int(self.cfg.get("mt_beam_size", 1)),
-                hf_token=None,
+            mt_backend = str(self.cfg.get("mt_backend", "nllb"))
+            mt = (
+                Translator(
+                    model_name=str(self.cfg.get("mt_model", "facebook/nllb-200-distilled-600M")),
+                    device=str(self.cfg.get("mt_device", "cuda")),
+                    beam_size=int(self.cfg.get("mt_beam_size", 1)),
+                    hf_token=None,
+                )
+                if mt_backend == "nllb"
+                else SakuraOllamaTranslator(
+                    model_name=str(self.cfg.get("mt_model", "sakura-1.5b")),
+                    host=(str(self.cfg.get("ollama_host") or "").strip() or None),
+                )
             )
             self._emit({"type": "status", "status": "running"})
             for seg in vad.segments(audio.frames()):
@@ -273,11 +282,20 @@ class _Handler(BaseHTTPRequestHandler):
             f.write(file_bytes)
 
         cpu = str(fields.get("cpu") or "").lower() in ("1", "true", "on", "yes")
+        mt_backend = str(fields.get("mt_backend") or "nllb").strip().lower()
+        ollama_host = str(fields.get("ollama_host") or "").strip().strip("`'\"").rstrip("/") or None
         asr_model = str(fields.get("asr_model") or "").strip() or _pick_local_model(r"llm\gpustack\faster-whisper-medium", "medium")
-        mt_model = str(fields.get("mt_model") or "").strip() or _pick_local_model(r"llm\facebook\nllb-200-distilled-600M", "facebook/nllb-200-distilled-600M")
+        mt_model = (
+            str(fields.get("mt_model") or "").strip()
+            or (
+                _pick_local_model(r"llm\facebook\nllb-200-distilled-600M", "facebook/nllb-200-distilled-600M")
+                if mt_backend == "nllb"
+                else "sakura-1.5b"
+            )
+        )
         if os.path.isdir(asr_model):
             asr_model = os.path.abspath(asr_model)
-        if os.path.isdir(mt_model):
+        if mt_backend == "nllb" and os.path.isdir(mt_model):
             mt_model = os.path.abspath(mt_model)
 
         cfg = {
@@ -292,9 +310,11 @@ class _Handler(BaseHTTPRequestHandler):
             "asr_device": "cpu" if cpu else "cuda",
             "asr_compute_type": str(fields.get("asr_compute_type") or "int8_float16"),
             "asr_beam_size": int(str(fields.get("asr_beam_size") or "1")),
+            "mt_backend": mt_backend,
             "mt_model": mt_model,
             "mt_device": "cpu" if cpu else "cuda",
             "mt_beam_size": int(str(fields.get("mt_beam_size") or "1")),
+            "ollama_host": ollama_host,
         }
 
         job = self.server.state.create_job(media_path=media_path, cfg=cfg)

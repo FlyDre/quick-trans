@@ -5,6 +5,7 @@ import time
 from quick_trans.asr import Asr
 from quick_trans.audio import AudioStream
 from quick_trans.mt import Translator
+from quick_trans.mt_sakura import SakuraOllamaTranslator
 from quick_trans.vad import VadSegmenter
 from quick_trans.vtt import Cue, WebVttWriter, _format_ts
 
@@ -27,6 +28,8 @@ class PipelineConfig:
     mt_model: str
     mt_device: str
     mt_beam_size: int
+    mt_backend: str
+    ollama_host: str | None
     language: str
     hf_token: str | None
     hf_endpoint: str | None
@@ -70,11 +73,15 @@ class Pipeline:
             beam_size=self._cfg.asr_beam_size,
             language=self._cfg.language,
         )
-        mt = Translator(
-            model_name=self._cfg.mt_model,
-            device=self._cfg.mt_device,
-            beam_size=self._cfg.mt_beam_size,
-            hf_token=self._cfg.hf_token,
+        mt = (
+            Translator(
+                model_name=self._cfg.mt_model,
+                device=self._cfg.mt_device,
+                beam_size=self._cfg.mt_beam_size,
+                hf_token=self._cfg.hf_token,
+            )
+            if self._cfg.mt_backend == "nllb"
+            else SakuraOllamaTranslator(model_name=self._cfg.mt_model, host=self._cfg.ollama_host)
         )
         t_init = time.perf_counter() - t_total0
 

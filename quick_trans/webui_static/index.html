@@ -28,7 +28,14 @@
         <label>ASR模型：<input id="asrModel" type="text" value="" placeholder="留空=默认本地medium/否则输入路径或模型名" /></label>
       </div>
       <div class="row">
-        <label>翻译模型：<input id="mtModel" type="text" value="" placeholder="留空=默认本地nllb/否则输入路径或模型名" /></label>
+        <label>翻译后端：
+          <select id="mtBackend">
+            <option value="nllb" selected>NLLB (transformers)</option>
+            <option value="sakura-ollama">Sakura (Ollama)</option>
+          </select>
+        </label>
+        <label>翻译模型：<input id="mtModel" type="text" value="" placeholder="nllb:留空=默认本地nllb；sakura:留空=sakura-1.5b" /></label>
+        <label>Ollama地址：<input id="ollamaHost" type="text" value="" placeholder="留空=http://127.0.0.1:11434" /></label>
       </div>
       <div class="row">
         <label>ASR compute_type：<input id="asrCt" type="text" value="int8_float16" /></label>
@@ -49,7 +56,9 @@
       const fileEl = document.getElementById('file');
       const cpuEl = document.getElementById('cpu');
       const asrModelEl = document.getElementById('asrModel');
+      const mtBackendEl = document.getElementById('mtBackend');
       const mtModelEl = document.getElementById('mtModel');
+      const ollamaHostEl = document.getElementById('ollamaHost');
       const asrCtEl = document.getElementById('asrCt');
       const startEl = document.getElementById('start');
       const statusEl = document.getElementById('status');
@@ -109,7 +118,9 @@
         form.append('file', f, f.name);
         form.append('cpu', cpuEl.checked ? '1' : '0');
         if (asrModelEl.value.trim()) form.append('asr_model', asrModelEl.value.trim());
+        form.append('mt_backend', mtBackendEl.value);
         if (mtModelEl.value.trim()) form.append('mt_model', mtModelEl.value.trim());
+        if (ollamaHostEl.value.trim()) form.append('ollama_host', ollamaHostEl.value.trim());
         if (asrCtEl.value.trim()) form.append('asr_compute_type', asrCtEl.value.trim());
 
         setStatus('上传并启动识别中…');
