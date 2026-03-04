@@ -36,6 +36,10 @@ python -m quick_trans.cli --input "1.ncm" --output out-s.vtt --asr-model ".\llm\
 python -m quick_trans.cli --input "2.mp3" --output out-m.vtt --asr-model ".\llm\gpustack\faster-whisper-medium" --mt-model ".\llm\facebook\nllb-200-distilled-600M" --asr-compute-type int8 --asr-text
 ###
 
+### 单独测试日译中模块
+python .\scripts\test_mt_ja2zh.py
+###
+
 ### small
 python -m quick_trans.cli --input "1.ncm" --output out-s.vtt --asr-model ".\llm\gpustack\faster-whisper-small"
 
