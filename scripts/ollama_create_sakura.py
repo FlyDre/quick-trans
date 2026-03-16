@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import os
 import subprocess
 import tempfile
@@ -10,14 +10,12 @@ def _repo_root() -> str:
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="ollama_create_sakura")
-    p.add_argument("--name", default="sakura-1.5b", help="Ollama 模型名（后续用 --mt-model 指向它）")
-    p.add_argument("--gguf", required=True, help="本地 gguf 文件路径")
+    p.add_argument("--name", default="sakura-1.5b", help="Ollama model name")
+    p.add_argument("--gguf", required=True, help="Local gguf file path")
     p.add_argument(
         "--system",
         default=(
-            "你是一个轻小说/歌词风格的日中翻译模型。"
-            "你要把日文翻译成简体中文。"
-            "要求：忠实原意；尽量不要增删信息；不要擅自添加原文没有的主语/人称代词；不要胡编剧情；仅输出译文。"
+            "You are a helpful assistant."
         ),
     )
     return p.parse_args()
@@ -28,15 +26,29 @@ def main() -> None:
     name = str(args.name).strip()
     gguf = os.path.abspath(str(args.gguf).strip().strip('"'))
     if not os.path.isfile(gguf):
-        raise SystemExit(f"gguf 文件不存在：{gguf}")
+        raise SystemExit(f"gguf file not found: {gguf}")
 
-    modelfile = f'FROM "{gguf}"\nSYSTEM """{args.system}"""\nPARAMETER temperature 0.1\nPARAMETER top_p 0.3\nPARAMETER repeat_penalty 1.0\n'
+    # Qwen2.5 chat template for Ollama
+    template = (
+        "{{ if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n{{ end }}"
+        "{{ range .Messages }}<|im_start|>{{ .Role }}\n{{ .Content }}<|im_end|>\n{{ end }}"
+        "<|im_start|>assistant\n"
+    )
+    modelfile = (
+        f'FROM "{gguf}"\n'
+        f'SYSTEM """{args.system}"""\n'
+        f'TEMPLATE """{template}"""\n'
+        "PARAMETER temperature 0.7\n"
+        "PARAMETER top_p 0.9\n"
+        "PARAMETER repeat_penalty 1.1\n"
+        'PARAMETER stop "<|im_end|>"\n'
+    )
     with tempfile.TemporaryDirectory(prefix="ollama_sakura_") as td:
         path = os.path.join(td, "Modelfile")
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(modelfile)
         subprocess.check_call(["ollama", "create", name, "-f", path])
-    print(f"完成：ollama create {name}")
+    print(f"done: ollama create {name}")
 
 
 if __name__ == "__main__":

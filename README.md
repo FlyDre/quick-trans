@@ -19,6 +19,28 @@ A project for generate Chinese subtitles for Japanese videos in real-time. 实�
 python -m quick_trans.cli --input .\demo.wav --output .\out.vtt
 ```
 
+### Quality 模式 + Sakura + GPU 测试命令
+1）先启动 Ollama 服务：
+```bash
+ollama serve
+```
+2）确认 Sakura 模型可用：
+```bash
+ollama list
+```
+3）运行 quality 模式（不使用 CPU、不使用 NLLB）：
+```bash
+python -m quick_trans.cli --input ".\your_audio.wav" --output ".\out-quality-sakura.vtt" --mode quality --mt-backend sakura-ollama --mt-model sakura-1.5b --asr-device cuda
+```
+4）本仓库内可直接复现的测试命令（使用已生成的临时音频）：
+```bash
+python -m quick_trans.cli --input ".\tmp\quality_sakura_test.wav" --output ".\tmp\quality_sakura_test.vtt" --mode quality --mt-backend sakura-ollama --mt-model sakura-1.5b --asr-device cuda
+```
+5）若输出仍是日文原文或空白，重建 Sakura 模型后再测：
+```bash
+python .\scripts\ollama_create_sakura.py --name sakura-1.5b --gguf ".\llm\SakuraLLM\Sakura-1.5B-Qwen2.5-v1.0-GGUF\sakura-1.5b-qwen2.5-v1.0-fp16.gguf"
+```
+
 ### Web 实时字幕（本地）
 启动服务：
 ```bash

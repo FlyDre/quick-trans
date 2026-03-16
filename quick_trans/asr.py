@@ -20,10 +20,12 @@ class Asr:
         compute_type: str = "int8_float16",
         beam_size: int = 1,
         language: str = "ja",
+        condition_on_previous_text: bool = True,
     ) -> None:
         self._model = WhisperModel(model_name, device=device, compute_type=compute_type)
         self._beam_size = beam_size
         self._language = language
+        self._condition_on_previous_text = condition_on_previous_text
 
     def transcribe(self, audio_16k_float32: np.ndarray, offset_s: float) -> List[AsrSegment]:
         segments, _info = self._model.transcribe(
@@ -31,7 +33,7 @@ class Asr:
             language=self._language,
             beam_size=self._beam_size,
             vad_filter=False,
-            condition_on_previous_text=False,
+            condition_on_previous_text=self._condition_on_previous_text,
             temperature=0.0,
         )
         out: List[AsrSegment] = []

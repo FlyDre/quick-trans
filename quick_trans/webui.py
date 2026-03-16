@@ -60,15 +60,15 @@ class _Job:
                 frame_ms=frame_ms,
                 aggressiveness=int(self.cfg.get("vad_aggressiveness", 2)),
                 start_ms=int(self.cfg.get("vad_start_ms", 150)),
-                end_ms=int(self.cfg.get("vad_end_ms", 450)),
+                end_ms=int(self.cfg.get("vad_end_ms", 650)),
                 min_segment_s=float(self.cfg.get("min_segment_s", 0.4)),
-                max_segment_s=float(self.cfg.get("max_segment_s", 10.0)),
+                max_segment_s=float(self.cfg.get("max_segment_s", 20.0)),
             )
             asr = Asr(
                 model_name=str(self.cfg.get("asr_model", "small")),
                 device=str(self.cfg.get("asr_device", "cuda")),
-                compute_type=str(self.cfg.get("asr_compute_type", "int8_float16")),
-                beam_size=int(self.cfg.get("asr_beam_size", 1)),
+                compute_type=str(self.cfg.get("asr_compute_type", "float16")),
+                beam_size=int(self.cfg.get("asr_beam_size", 8)),
                 language=str(self.cfg.get("language", "ja")),
             )
             mt_backend = str(self.cfg.get("mt_backend", "nllb"))
@@ -76,7 +76,7 @@ class _Job:
                 Translator(
                     model_name=str(self.cfg.get("mt_model", "facebook/nllb-200-distilled-600M")),
                     device=str(self.cfg.get("mt_device", "cuda")),
-                    beam_size=int(self.cfg.get("mt_beam_size", 1)),
+                    beam_size=int(self.cfg.get("mt_beam_size", 3)),
                     hf_token=None,
                 )
                 if mt_backend == "nllb"
@@ -86,19 +86,47 @@ class _Job:
                 )
             )
             self._emit({"type": "status", "status": "running"})
+            pending = None
+            pending_prev_text = None
             for seg in vad.segments(audio.frames()):
                 asr_segs = asr.transcribe(seg.audio, offset_s=seg.start_s)
                 for s in asr_segs:
-                    zh = mt.translate_ja_to_zh(s.text)
+                    if pending is None:
+                        pending = s
+                        continue
+                    if mt_backend == "sakura-ollama" and hasattr(mt, "translate_ja_to_zh_with_context"):
+                        zh = mt.translate_ja_to_zh_with_context(
+                            pending.text,
+                            prev_text=pending_prev_text,
+                            next_text=s.text,
+                        )
+                    else:
+                        zh = mt.translate_ja_to_zh(pending.text)
                     self._emit(
                         {
                             "type": "cue",
-                            "start": float(s.start_s),
-                            "end": float(s.end_s),
-                            "asr": s.text,
+                            "start": float(pending.start_s),
+                            "end": float(pending.end_s),
+                            "asr": pending.text,
                             "zh": zh,
                         }
                     )
+                    pending_prev_text = pending.text
+                    pending = s
+            if pending is not None:
+                if mt_backend == "sakura-ollama" and hasattr(mt, "translate_ja_to_zh_with_context"):
+                    zh = mt.translate_ja_to_zh_with_context(pending.text, prev_text=pending_prev_text, next_text=None)
+                else:
+                    zh = mt.translate_ja_to_zh(pending.text)
+                self._emit(
+                    {
+                        "type": "cue",
+                        "start": float(pending.start_s),
+                        "end": float(pending.end_s),
+                        "asr": pending.text,
+                        "zh": zh,
+                    }
+                )
             self._emit({"type": "done"})
         except Exception as e:
             self._emit({"type": "error", "message": str(e)})
@@ -282,6 +310,9 @@ class _Handler(BaseHTTPRequestHandler):
             f.write(file_bytes)
 
         cpu = str(fields.get("cpu") or "").lower() in ("1", "true", "on", "yes")
+        mode = str(fields.get("mode") or "quality").strip().lower()
+        if mode not in ("fast", "quality"):
+            mode = "quality"
         mt_backend = str(fields.get("mt_backend") or "nllb").strip().lower()
         ollama_host = str(fields.get("ollama_host") or "").strip().strip("`'\"").rstrip("/") or None
         asr_model = str(fields.get("asr_model") or "").strip() or _pick_local_model(r"llm\gpustack\faster-whisper-medium", "medium")
@@ -302,18 +333,18 @@ class _Handler(BaseHTTPRequestHandler):
             "frame_ms": 30,
             "vad_aggressiveness": 2,
             "vad_start_ms": 150,
-            "vad_end_ms": 450,
+            "vad_end_ms": 650 if mode == "quality" else 450,
             "min_segment_s": 0.4,
-            "max_segment_s": 10.0,
+            "max_segment_s": 20.0 if mode == "quality" else 10.0,
             "language": "ja",
             "asr_model": asr_model,
             "asr_device": "cpu" if cpu else "cuda",
-            "asr_compute_type": str(fields.get("asr_compute_type") or "int8_float16"),
-            "asr_beam_size": int(str(fields.get("asr_beam_size") or "1")),
+            "asr_compute_type": str(fields.get("asr_compute_type") or ("float16" if mode == "quality" else "int8_float16")),
+            "asr_beam_size": int(str(fields.get("asr_beam_size") or ("8" if mode == "quality" else "1"))),
             "mt_backend": mt_backend,
             "mt_model": mt_model,
             "mt_device": "cpu" if cpu else "cuda",
-            "mt_beam_size": int(str(fields.get("mt_beam_size") or "1")),
+            "mt_beam_size": int(str(fields.get("mt_beam_size") or ("3" if mode == "quality" else "1"))),
             "ollama_host": ollama_host,
         }
 

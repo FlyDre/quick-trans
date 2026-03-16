@@ -38,7 +38,13 @@
         <label>Ollama地址：<input id="ollamaHost" type="text" value="" placeholder="留空=http://127.0.0.1:11434" /></label>
       </div>
       <div class="row">
-        <label>ASR compute_type：<input id="asrCt" type="text" value="int8_float16" /></label>
+        <label>模式：
+          <select id="mode">
+            <option value="quality" selected>质量优先</option>
+            <option value="fast">速度优先</option>
+          </select>
+        </label>
+        <label>ASR compute_type：<input id="asrCt" type="text" value="" placeholder="留空=按模式自动选择" /></label>
         <button id="start">开始</button>
         <span id="status" class="status"></span>
       </div>
@@ -59,6 +65,7 @@
       const mtBackendEl = document.getElementById('mtBackend');
       const mtModelEl = document.getElementById('mtModel');
       const ollamaHostEl = document.getElementById('ollamaHost');
+      const modeEl = document.getElementById('mode');
       const asrCtEl = document.getElementById('asrCt');
       const startEl = document.getElementById('start');
       const statusEl = document.getElementById('status');
@@ -117,6 +124,7 @@
         const form = new FormData();
         form.append('file', f, f.name);
         form.append('cpu', cpuEl.checked ? '1' : '0');
+        form.append('mode', modeEl.value);
         if (asrModelEl.value.trim()) form.append('asr_model', asrModelEl.value.trim());
         form.append('mt_backend', mtBackendEl.value);
         if (mtModelEl.value.trim()) form.append('mt_model', mtModelEl.value.trim());

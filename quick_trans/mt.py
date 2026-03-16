@@ -71,7 +71,7 @@ class Translator:
                     forced_bos_token_id=tgt_id,
                     num_beams=self._beam_size,
                     do_sample=False,
-                    max_new_tokens=128,
+                    max_new_tokens=256,
                 )
                 s = self._tokenizer.batch_decode(out, skip_special_tokens=True)[0]
                 return (s or "").strip()
@@ -81,7 +81,7 @@ class Translator:
                 **enc,
                 num_beams=self._beam_size,
                 do_sample=False,
-                max_new_tokens=128,
+                max_new_tokens=256,
             )
             s = self._tokenizer.batch_decode(out, skip_special_tokens=True)[0]
             return (s or "").strip()

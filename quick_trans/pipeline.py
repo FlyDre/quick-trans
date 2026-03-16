@@ -2,6 +2,8 @@ from dataclasses import dataclass
 import os
 import time
 
+import numpy as np
+
 from quick_trans.asr import Asr
 from quick_trans.audio import AudioStream
 from quick_trans.mt import Translator
@@ -15,6 +17,7 @@ class PipelineConfig:
     input_path: str
     output_path: str
     realtime: bool
+    full_asr: bool
     frame_ms: int
     vad_aggressiveness: int
     vad_start_ms: int
@@ -91,6 +94,7 @@ class Pipeline:
         t_vtt = 0.0
         t_asr_text = 0.0
         audio_s = 0.0
+        recognized = []
 
         asr_f = None
         if self._cfg.asr_text_path:
@@ -100,33 +104,58 @@ class Pipeline:
             t_init += time.perf_counter() - t0
         try:
             with WebVttWriter(self._cfg.output_path) as vtt:
-                it = iter(vad.segments(audio.frames()))
-                while True:
+                if self._cfg.full_asr:
                     t0 = time.perf_counter()
-                    try:
-                        seg = next(it)
-                    except StopIteration:
-                        break
+                    frames = [fr.samples for fr in audio.frames()]
                     t_vad += time.perf_counter() - t0
-                    audio_s = max(audio_s, float(seg.end_s))
+                    if frames:
+                        full_audio = np.concatenate(frames, axis=0)
+                        audio_s = float(full_audio.shape[0]) / float(audio.sample_rate)
+                        t1 = time.perf_counter()
+                        asr_segs = asr.transcribe(full_audio, offset_s=0.0)
+                        t_asr += time.perf_counter() - t1
+                        for s in asr_segs:
+                            recognized.append(s)
+                            if asr_f is not None:
+                                t4 = time.perf_counter()
+                                asr_f.write(f"{_format_ts(s.start_s)} --> {_format_ts(s.end_s)}\t{s.text}\n")
+                                asr_f.flush()
+                                t_asr_text += time.perf_counter() - t4
+                else:
+                    it = iter(vad.segments(audio.frames()))
+                    while True:
+                        t0 = time.perf_counter()
+                        try:
+                            seg = next(it)
+                        except StopIteration:
+                            break
+                        t_vad += time.perf_counter() - t0
+                        audio_s = max(audio_s, float(seg.end_s))
 
-                    t1 = time.perf_counter()
-                    asr_segs = asr.transcribe(seg.audio, offset_s=seg.start_s)
-                    t_asr += time.perf_counter() - t1
-                    if not asr_segs:
-                        continue
-                    for s in asr_segs:
-                        if asr_f is not None:
-                            t4 = time.perf_counter()
-                            asr_f.write(f"{_format_ts(s.start_s)} --> {_format_ts(s.end_s)}\t{s.text}\n")
-                            asr_f.flush()
-                            t_asr_text += time.perf_counter() - t4
-                        t2 = time.perf_counter()
+                        t1 = time.perf_counter()
+                        asr_segs = asr.transcribe(seg.audio, offset_s=seg.start_s)
+                        t_asr += time.perf_counter() - t1
+                        if not asr_segs:
+                            continue
+                        for s in asr_segs:
+                            recognized.append(s)
+                            if asr_f is not None:
+                                t4 = time.perf_counter()
+                                asr_f.write(f"{_format_ts(s.start_s)} --> {_format_ts(s.end_s)}\t{s.text}\n")
+                                asr_f.flush()
+                                t_asr_text += time.perf_counter() - t4
+                for i, s in enumerate(recognized):
+                    prev_text = recognized[i - 1].text if i > 0 else None
+                    next_text = recognized[i + 1].text if i + 1 < len(recognized) else None
+                    t2 = time.perf_counter()
+                    if self._cfg.mt_backend == "sakura-ollama" and hasattr(mt, "translate_ja_to_zh_with_context"):
+                        zh = mt.translate_ja_to_zh_with_context(s.text, prev_text=prev_text, next_text=next_text)
+                    else:
                         zh = mt.translate_ja_to_zh(s.text)
-                        t_mt += time.perf_counter() - t2
-                        t3 = time.perf_counter()
-                        vtt.write(Cue(start_s=s.start_s, end_s=s.end_s, text=f"ASR: {s.text} | ZH: {zh}"))
-                        t_vtt += time.perf_counter() - t3
+                    t_mt += time.perf_counter() - t2
+                    t3 = time.perf_counter()
+                    vtt.write(Cue(start_s=s.start_s, end_s=s.end_s, text=f"ASR: {s.text} | ZH: {zh}"))
+                    t_vtt += time.perf_counter() - t3
         finally:
             if asr_f is not None:
                 asr_f.flush()

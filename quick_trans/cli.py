@@ -15,7 +15,9 @@ from quick_trans.pipeline import Pipeline
 class Args:
     input: str
     output: str
+    mode: str
     realtime: bool
+    full_asr: bool
     frame_ms: int
     vad_aggressiveness: int
     vad_start_ms: int
@@ -51,25 +53,27 @@ def _parse_args() -> Args:
     p = argparse.ArgumentParser(prog="quick-trans")
     p.add_argument("--input", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--mode", choices=["fast", "quality"], default="quality")
     p.add_argument("--realtime", action="store_true")
+    p.add_argument("--full-asr", action="store_true")
     p.add_argument("--cpu", action="store_true")
 
     p.add_argument("--frame-ms", type=int, default=30)
 
     p.add_argument("--vad-aggressiveness", type=int, default=2, choices=[0, 1, 2, 3])
-    p.add_argument("--vad-start-ms", type=int, default=150)
-    p.add_argument("--vad-end-ms", type=int, default=450)
+    p.add_argument("--vad-start-ms", type=int, default=None)
+    p.add_argument("--vad-end-ms", type=int, default=None)
     p.add_argument("--min-segment-s", type=float, default=0.4)
-    p.add_argument("--max-segment-s", type=float, default=10.0)
+    p.add_argument("--max-segment-s", type=float, default=None)
 
     p.add_argument("--asr-model", default=None)
     p.add_argument("--asr-device", default="cuda")
-    p.add_argument("--asr-compute-type", default="int8_float16")
-    p.add_argument("--asr-beam-size", type=int, default=1)
+    p.add_argument("--asr-compute-type", default=None)
+    p.add_argument("--asr-beam-size", type=int, default=None)
 
     p.add_argument("--mt-model", default=None)
     p.add_argument("--mt-device", default="cuda")
-    p.add_argument("--mt-beam-size", type=int, default=1)
+    p.add_argument("--mt-beam-size", type=int, default=None)
     p.add_argument("--mt-backend", choices=["nllb", "sakura-ollama"], default="nllb")
     p.add_argument("--ollama-host", default=None)
 
@@ -107,23 +111,38 @@ def _parse_args() -> Args:
             asr_text = os.path.abspath(s)
     asr_device = "cpu" if a.cpu else a.asr_device
     mt_device = "cpu" if a.cpu else a.mt_device
+    full_asr = bool(a.full_asr) or (a.mode == "quality" and not a.realtime)
+    if a.mode == "quality":
+        vad_end_ms = int(a.vad_end_ms) if a.vad_end_ms is not None else 650
+        max_segment_s = float(a.max_segment_s) if a.max_segment_s is not None else 20.0
+        asr_compute_type = str(a.asr_compute_type).strip() if a.asr_compute_type else "float16"
+        asr_beam_size = int(a.asr_beam_size) if a.asr_beam_size is not None else 8
+        mt_beam_size = int(a.mt_beam_size) if a.mt_beam_size is not None else 3
+    else:
+        vad_end_ms = int(a.vad_end_ms) if a.vad_end_ms is not None else 450
+        max_segment_s = float(a.max_segment_s) if a.max_segment_s is not None else 10.0
+        asr_compute_type = str(a.asr_compute_type).strip() if a.asr_compute_type else "int8_float16"
+        asr_beam_size = int(a.asr_beam_size) if a.asr_beam_size is not None else 1
+        mt_beam_size = int(a.mt_beam_size) if a.mt_beam_size is not None else 1
     return Args(
         input=a.input,
         output=a.output,
+        mode=a.mode,
         realtime=a.realtime,
+        full_asr=full_asr,
         frame_ms=a.frame_ms,
         vad_aggressiveness=a.vad_aggressiveness,
-        vad_start_ms=a.vad_start_ms,
-        vad_end_ms=a.vad_end_ms,
+        vad_start_ms=int(a.vad_start_ms) if a.vad_start_ms is not None else 150,
+        vad_end_ms=vad_end_ms,
         min_segment_s=a.min_segment_s,
-        max_segment_s=a.max_segment_s,
+        max_segment_s=max_segment_s,
         asr_model=asr_model,
         asr_device=asr_device,
-        asr_compute_type=a.asr_compute_type,
-        asr_beam_size=a.asr_beam_size,
+        asr_compute_type=asr_compute_type,
+        asr_beam_size=asr_beam_size,
         mt_model=mt_model,
         mt_device=mt_device,
-        mt_beam_size=a.mt_beam_size,
+        mt_beam_size=mt_beam_size,
         mt_backend=a.mt_backend,
         ollama_host=(str(a.ollama_host).strip().strip("`'\"").rstrip("/") if a.ollama_host else None),
         language=a.language,
@@ -144,6 +163,7 @@ def main() -> None:
         input_path=input_path,
         output_path=output_path,
         realtime=a.realtime,
+        full_asr=a.full_asr,
         frame_ms=a.frame_ms,
         vad_aggressiveness=a.vad_aggressiveness,
         vad_start_ms=a.vad_start_ms,
